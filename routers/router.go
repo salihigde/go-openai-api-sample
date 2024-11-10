@@ -7,6 +7,6 @@ import (
 
 func InitRoutes() *mux.Router {
 	router := mux.NewRouter()
-	router.HandleFunc("/", handlers.OpenAIHandler).Methods("POST")
+	router.HandleFunc("/openai", handlers.OpenAIHandler).Methods("POST")
 	return router
 }

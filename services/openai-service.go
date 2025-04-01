@@ -1,96 +1,98 @@
 package services
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
-	"io"
-	"net/http"
-	"os"
 
+	"github.com/sashabaranov/go-openai"
 	"salihigde.com/go-openai-api-sample/config"
 )
 
-type OpenAIRequest struct {
-	Model     string    `json:"model"`
-	Messages  []Message `json:"messages"`
-	MaxTokens int       `json:"max_tokens,omitempty"`
+type OpenAIService struct {
+	client    *openai.Client
+	model     string
+	maxTokens int
 }
 
-type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+// NewOpenAIService creates a new instance of OpenAIService
+func NewOpenAIService() (*OpenAIService, error) {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %v", err)
+	}
+
+	client := openai.NewClient(cfg.OpenAIAPIKey)
+	return &OpenAIService{
+		client:    client,
+		model:     cfg.OpenAIModel,
+		maxTokens: cfg.OpenAIMaxTokens,
+	}, nil
 }
 
-type OpenAIResponse struct {
-	Choices []Choice `json:"choices"`
+// CallOpenAI sends a prompt to OpenAI and returns the response
+func (s *OpenAIService) CallOpenAI(ctx context.Context, prompt string) (string, error) {
+	return s.CallOpenAIWithSystemPrompt(ctx, prompt, "")
 }
 
-type Choice struct {
-	Message      Message `json:"message"`
-	FinishReason string  `json:"finish_reason"`
-	Index        int     `json:"index"`
-}
-
-const OpenAIRequestRole = "user"
-const OpenAIRequestMaxTokens = 30
-
-var httpClient = &http.Client{}
-
-func CallOpenAI(prompt string) (string, error) {
-	openAIRequest := OpenAIRequest{
-		Model: config.OpenAIModel,
-		Messages: []Message{
-			{
-				Role:    OpenAIRequestRole,
-				Content: prompt,
-			},
+// CallOpenAIWithSystemPrompt sends a prompt to OpenAI with a custom system message
+func (s *OpenAIService) CallOpenAIWithSystemPrompt(ctx context.Context, prompt string, systemPrompt string) (string, error) {
+	messages := []openai.ChatCompletionMessage{
+		{
+			Role:    openai.ChatMessageRoleUser,
+			Content: prompt,
 		},
-		MaxTokens: OpenAIRequestMaxTokens,
 	}
 
-	reqBodyBytes, err := json.Marshal(openAIRequest)
+	if systemPrompt != "" {
+		messages = append([]openai.ChatCompletionMessage{
+			{
+				Role:    openai.ChatMessageRoleSystem,
+				Content: systemPrompt,
+			},
+		}, messages...)
+	}
+
+	return s.CallOpenAIWithHistory(ctx, messages)
+}
+
+// CallOpenAIWithHistory sends a prompt to OpenAI with a conversation history
+func (s *OpenAIService) CallOpenAIWithHistory(ctx context.Context, messages []openai.ChatCompletionMessage) (string, error) {
+	// Create the request
+	req := openai.ChatCompletionRequest{
+		Model:    s.model,
+		Messages: messages,
+	}
+
+	// Only set MaxTokens for models that support it (not O3Mini)
+	if s.model != "o3-mini" && s.model != "o3-mini-2025-01-31" {
+		req.MaxTokens = s.maxTokens
+	}
+
+	resp, err := s.client.CreateChatCompletion(ctx, req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create chat completion: %v", err)
 	}
 
-	apiKey := os.Getenv(config.OpenAIAPIKeyEnv)
-	if apiKey == "" {
-		return "", fmt.Errorf("OPENAI_API_KEY is not set")
+	if len(resp.Choices) == 0 {
+		return "", fmt.Errorf("no response choices returned")
 	}
 
-	req, err := http.NewRequest("POST", config.OpenAIEndpoint, bytes.NewBuffer(reqBodyBytes))
+	return resp.Choices[0].Message.Content, nil
+}
+
+// GenerateEmbedding generates embeddings for the given text using OpenAI
+func (s *OpenAIService) GenerateEmbedding(ctx context.Context, text string) ([]float32, error) {
+	resp, err := s.client.CreateEmbeddings(ctx, openai.EmbeddingRequest{
+		Model: openai.AdaEmbeddingV2,
+		Input: []string{text},
+	})
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("failed to create embedding: %v", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
+	if len(resp.Data) == 0 {
+		return nil, fmt.Errorf("no embeddings returned")
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("OpenAI API returned status code %d: %s", resp.StatusCode, string(body))
-	}
-
-	var openaiResp OpenAIResponse
-	err = json.Unmarshal(body, &openaiResp)
-	if err != nil {
-		return "", err
-	}
-
-	if len(openaiResp.Choices) == 0 {
-		return "", fmt.Errorf("No response from OpenAI")
-	}
-
-	return openaiResp.Choices[0].Message.Content, nil
+	return resp.Data[0].Embedding, nil
 }

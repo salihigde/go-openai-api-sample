@@ -1,143 +1,158 @@
-# Go OpenAI Sample Project
+# RAG Service with OpenAI and Pinecone
 
-## Description
-This is a sample project written in Go that demonstrates how to integrate with the OpenAI API. It provides a basic framework for making API calls to OpenAI and serves as a starting point for building more complex endpoints and features. This project is ideal for developers who want to learn how to structure a Go application, manage environment variables, and handle HTTP requests effectively. Use this as a foundation to expand into a fully-featured API with custom logic and additional integrations.
+This service implements Retrieval-Augmented Generation (RAG) using OpenAI for embeddings and completions, and Pinecone for vector storage and similarity search.
 
----
+## Environment Setup
 
-## Getting Started
+1. Copy the example environment file:
+   ```bash
+   cp .env.example .env
+   ```
 
-Follow these steps to set up and run the application locally.
+2. Configure your environment variables in `.env`:
+   ```
+   OPENAI_API_KEY=your_api_key_here        # Required: OpenAI API key
+   PINECONE_API_KEY=your_key_here          # Required: Pinecone API key
+   PINECONE_INDEX_NAME=your_index_here     # Required: Pinecone index name
+   OPENAI_MODEL=gpt-4                      # Optional: Default is gpt-4
+   OPENAI_MAX_TOKENS=30                    # Optional: Default is 30
+   ```
 
-### Prerequisites
+   Get your API keys from:
+   - OpenAI API key: https://platform.openai.com/api-keys
+   - Pinecone API key: https://app.pinecone.io/
 
-- **Go**: Make sure Go is installed on your machine. You can download it from [https://golang.org/dl/](https://golang.org/dl/).
-- **OpenAI API Key**: Obtain an API key from OpenAI by signing up at [OpenAI Platform](https://platform.openai.com/).
+### Pinecone Index Setup
 
-### Setup
+Create a new index in Pinecone Console with these settings:
+- Dimensions: 1536 (required for OpenAI ada-002 embeddings)
+- Metric: Cosine
+- Pod Type: starter (or higher based on your needs)
 
-1. **Clone the Repository**:
+## Features
 
-    ```bash
-    git clone https://github.com/salihigde/go-openai-api-sample.git
-    cd go-openai-api-sample
-    ```
+- Document ingestion with automatic embedding generation
+- Semantic search using OpenAI embeddings
+- RAG-based query answering using GPT-4
+- Source attribution for answers
+- Bulk JSON data upload utility
+- RESTful API for OpenAI interactions
 
-2. **Set Up Environment Variables**:
+## Usage
 
-    Set the `OPENAI_API_KEY` environment variable. This key is required to authenticate API requests to OpenAI.
+### Running the API Server
 
-    - **On macOS/Linux**:
+1. Build the server:
+   ```bash
+   go build -o rag-server
+   ```
 
-      ```bash
-      export OPENAI_API_KEY="your_openai_api_key_here"
-      ```
+2. Run the server:
+   ```bash
+   ./rag-server
+   ```
+   The server will start on port 8090 by default.
 
-    - **On Windows (Command Prompt)**:
+3. API Endpoint:
 
-      ```cmd
-      set OPENAI_API_KEY=your_openai_api_key_here
-      ```
-
-    - **On Windows (PowerShell)**:
-
-      ```powershell
-      $env:OPENAI_API_KEY = "your_openai_api_key_here"
-      ```
-
-3. **Install Dependencies**:
-
-    The project uses Go modules for dependency management. Install all required dependencies with:
-
-    ```bash
-    go mod tidy
-    ```
-
-### Running the Application
-
-Run the application with:
-
-```bash
-go run main.go
-```
-
-By default, the server will start on port 8080.
-
-### Testing the API
-Once the application is running, you can test the API endpoint using curl:
-```bash
-curl -X POST \
+   **OpenAI Interaction**
+   ```bash
+   curl -X POST http://localhost:8090/openai \
      -H "Content-Type: application/json" \
-     -d '{"prompt": "Hello, how are you?"}' \
-     http://localhost:8080/openai
-```
+     -d '{
+       "query": "Your question here"
+     }'
+   ```
 
-#### Expected Response
-If everything is set up correctly, you should receive a response in JSON format that includes the AI's reply to your prompt:
-```json
-{
-    "response": "I'm here to help! How can I assist you today?"
+   Example response:
+   ```json
+   {
+     "response": "AI-generated answer based on your query",
+     "model": "gpt-4",
+     "tokens_used": 150
+   }
+   ```
+
+### JSON Uploader Tool
+
+The project includes a command-line tool for uploading JSON chunks to Pinecone. This is useful for bulk data ingestion:
+
+1. Build the uploader:
+   ```bash
+   go build -o json_uploader cmd/json_uploader/main.go
+   ```
+
+2. Prepare your JSON file:
+   - Create a JSON file with an array of text chunks
+   - Place it in the `data` directory
+   - Example (`data/chunks.json`):
+     ```json
+     [
+       "First text chunk to embed",
+       "Second text chunk to embed",
+       "Additional chunks..."
+     ]
+     ```
+
+3. Run the uploader:
+   ```bash
+   ./json_uploader -input data/chunks.json
+   ```
+
+   The uploader will:
+   - Read the JSON file
+   - Generate embeddings using OpenAI's ada-002 model
+   - Upload embeddings to your Pinecone index
+   - Display progress as it processes chunks
+
+### Development Examples
+
+#### Using the RAG Service
+
+```go
+import "salihigde.com/go-openai-api-sample/services"
+
+// Initialize the service
+ragService, err := services.NewRAGService()
+if err != nil {
+    log.Fatal(err)
 }
+
+// Query the service
+response, err := ragService.QueryWithRAG(context.Background(), &services.RAGRequest{
+    Query: "Your question here",
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Printf("Answer: %s\n", response.Answer)
+fmt.Printf("Sources: %v\n", response.Sources)
 ```
 
-### Project Structure
-This project follows a clean architecture pattern for improved maintainability and scalability:
-```graphql
-go-openai-api-sample/
-├── main.go                   # Application entry point
-├── config/                   # Configuration management
-│   └── config.go            # Environment variables and app configuration
-├── handlers/
-│   └── openai.go            # HTTP handlers for OpenAI endpoints
-├── services/
-│   └── openai_service.go    # Business logic and OpenAI API integration
-├── routers/
-│   └── router.go            # HTTP routing setup
-├── go.mod                   # Go module definition
-├── go.sum                   # Dependency checksums
-└── .gitignore              # Git ignore rules
+## Project Structure
+
+```
+.
+├── cmd/
+│   └── json_uploader/         # Bulk upload utility
+├── config/                    # Configuration management
+├── data/                     # Data files for upload
+├── handlers/                 # HTTP request handlers
+├── routers/                  # API route definitions
+├── services/                 # Core business logic
+│   ├── openai-service.go    # OpenAI service implementation
+│   └── rag_service.go       # RAG service implementation
+├── main.go                  # Main application entry point
+├── .env                     # Environment variables (not in git)
+├── .env.example            # Example environment variables
+├── go.mod                  # Go module definition
+├── go.sum                  # Go module checksums
+└── README.md              # Project documentation
 ```
 
-#### Directory Structure Explanation
-- **config**: Manages application configuration and environment variables
-- **handlers**: Contains HTTP handler functions that process incoming requests
-- **services**: Implements business logic and external API interactions
-- **routers**: Defines API routes and middleware configuration
+## Security Notes
 
-### Error Handling
-The application includes robust error handling to manage common scenarios:
-- Invalid API keys
-- Network connectivity issues
-- Rate limiting
-- Malformed requests
-
-### Best Practices
-This project demonstrates several Go best practices:
-- Environment-based configuration
-- Modular project structure
-- Clean separation of concerns
-- Error handling patterns
-- HTTP routing with Gorilla Mux
-
-### Contributing
-
-Contributions are welcome! Here's how you can help:
-
-1. Fork the project
-2. Create your feature branch (```git checkout -b feature/new-feature```)
-3. Commit your changes (```git commit -m 'Add new feature'```)
-4. Push to the branch (```git push origin feature/new-feature```)
-5. Open a Pull Request
-
-### License
-
-This project is open source and available under the MIT License.
-
-### Acknowledgments
-
-- [OpenAI](https://openai.com) for providing the API
-- [Gorilla Mux](https://github.com/gorilla/mux) for HTTP routing in Go
-
-### Support
-
-If you encounter any issues or have questions, please file an issue on the GitHub repository.
+- Never commit your `.env` file to version control
+- Keep your API keys secure and rotate them regularly
+- Consider using environment variables in production instead of `.env` files

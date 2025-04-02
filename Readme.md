@@ -83,14 +83,23 @@ The project includes a command-line tool for uploading JSON chunks to Pinecone. 
    ```
 
 2. Prepare your JSON file:
-   - Create a JSON file with an array of text chunks
+   - Create a JSON file with an array of document chunks
    - Place it in the `data` directory
    - Example (`data/chunks.json`):
      ```json
      [
-       "First text chunk to embed",
-       "Second text chunk to embed",
-       "Additional chunks..."
+       {
+         "title": "Introduction",
+         "content": "Welcome to our company! We are a leading software development firm specializing in artificial intelligence and machine learning solutions."
+       },
+       {
+         "title": "Our Mission",
+         "content": "Our mission is to transform businesses through innovative technology solutions. We believe in creating sustainable, scalable, and efficient systems that drive real-world impact."
+       },
+       {
+         "title": "Technology Stack",
+         "content": "We utilize cutting-edge technologies including Go, Python, and various cloud platforms. Our team has extensive experience with microservices architecture and distributed systems."
+       }
      ]
      ```
 
